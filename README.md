@@ -24,7 +24,7 @@ Sebelum memulai, pastikan server Anda telah memenuhi spesifikasi minimal berikut
   - RAM: 2 GB (tersedia limit aman pada compose file agar tidak membebani service utama)
   - Disk: 10 GB ruang kosong
 - **Network Ports**:
-  - `8080` (Web Dashboard SentinelAI melalui Nginx reverse proxy)
+  - `8788` (Web Dashboard SentinelAI melalui Nginx reverse proxy)
   - `5678` (n8n Web UI & Webhooks)
 
 ---
@@ -152,7 +152,7 @@ Perintah di atas akan:
 
 1. Buka browser dan akses:
    ```
-   http://IP_SERVER_ANDA:8080
+   http://IP_SERVER_ANDA:8788
    ```
 2. Halaman login SentinelAI akan muncul dengan dark mode.
 3. Masukkan kredensial administrator:
@@ -182,14 +182,14 @@ python3 ./audit-agent/sentinel-collector.py --dry-run
 ### Opsi B: Kirim Langsung ke SentinelAI API
 ```bash
 ./audit-agent/sentinel-collector.sh \
-  --send-to "http://localhost:8080/api/v1/audits/ingest" \
+  --send-to "http://localhost:8788/api/v1/audits/ingest" \
   --api-token "sentinel-secret-token-change-me"
 ```
 
 ### Opsi C: Otomatisasi Terjadwal via Linux Crontab (Setiap 6 Jam)
 Tambahkan ke `/etc/crontab` server target:
 ```cron
-0 */6 * * * root /opt/sentinel-ai/audit-agent/sentinel-collector.sh --send-to "http://localhost:8080/api/v1/audits/ingest" --api-token "sentinel-secret-token-change-me" >/dev/null 2>&1
+0 */6 * * * root /opt/sentinel-ai/audit-agent/sentinel-collector.sh --send-to "http://localhost:8788/api/v1/audits/ingest" --api-token "sentinel-secret-token-change-me" >/dev/null 2>&1
 ```
 
 ---
@@ -263,7 +263,7 @@ Sistem ini didesain dengan prinsip **Least Privilege** dan **Zero Destructive Ca
 Endpoint monitoring bawaan:
 
 ```bash
-curl -i http://localhost:8080/health
+curl -i http://localhost:8788/health
 ```
 
 Output:
@@ -286,7 +286,7 @@ Output:
 | **Database Connection Refused** | PostgreSQL sedang melakukan initial cluster setup | Tunggu 10-15 detik hingga healthcheck database berstatus *healthy*. |
 | **Audit Collector HTTP 401** | Token pada header `X-Sentinel-Token` tidak cocok dengan `SENTINEL_API_SECRET` | Pastikan flag `--api-token` sesuai dengan `SENTINEL_API_SECRET` pada file `.env`. |
 | **AI Timeout / Fallback Alert** | API Key tidak valid atau firewall memblokir outbound HTTPS | Cek koneksi ke provider. Jika API offline, SentinelAI otomatis menggunakan **Rule Engine Fallback** tanpa merusak pipeline. |
-| **Portainer Stack Error** | Port 8080 atau 5678 telah digunakan oleh aplikasi lain | Ubah `APP_PORT` (misal ke `8085`) dan `N8N_PORT` pada file `.env`. |
+| **Portainer Stack Error** | Port 8788 atau 5678 telah digunakan oleh aplikasi lain | Ubah `APP_PORT` (misal ke `8085`) dan `N8N_PORT` pada file `.env`. |
 
 ---
 

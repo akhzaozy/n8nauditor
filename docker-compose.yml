@@ -10,7 +10,7 @@ services:
     container_name: sentinel-nginx
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8080}:80"
+      - "${APP_PORT:-8788}:80"
     depends_on:
       app:
         condition: service_started
@@ -43,7 +43,7 @@ services:
       APP_ENV: "${APP_ENV:-production}"
       APP_KEY: "${APP_KEY:-base64:Xk9mQ1J6c1AwOUt6ZldtUW8xNThVUGVvV1ptRnhBOTA=}"
       APP_DEBUG: "${APP_DEBUG:-false}"
-      APP_URL: "${APP_URL:-http://localhost:8080}"
+      APP_URL: "${APP_URL:-http://localhost:8788}"
       DB_CONNECTION: pgsql
       DB_HOST: postgres
       DB_PORT: 5432
@@ -94,7 +94,7 @@ services:
       APP_ENV: "${APP_ENV:-production}"
       APP_KEY: "${APP_KEY:-base64:Xk9mQ1J6c1AwOUt6ZldtUW8xNThVUGVvV1ptRnhBOTA=}"
       APP_DEBUG: "${APP_DEBUG:-false}"
-      APP_URL: "${APP_URL:-http://localhost:8080}"
+      APP_URL: "${APP_URL:-http://localhost:8788}"
       DB_CONNECTION: pgsql
       DB_HOST: postgres
       DB_PORT: 5432
