@@ -1,0 +1,197 @@
+services:
+  # ---------------------------------------------------------------------------
+  # 1. Reverse Proxy (Nginx)
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: sentinel-nginx
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./app:/var/www/html:ro
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - sentinel_network
+    deploy:
+      resources:
+        limits:
+          cpus: "${NGINX_CPU_LIMIT:-0.50}"
+          memory: "${NGINX_MEM_LIMIT:-256M}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # 2. SentinelAI Web Application (Laravel 12 / PHP 8.3-FPM)
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: sentinel-app:latest
+    container_name: sentinel-app
+    restart: unless-stopped
+    environment:
+      APP_NAME: "${APP_NAME:-SentinelAI}"
+      APP_ENV: "${APP_ENV:-production}"
+      APP_KEY: "${APP_KEY:-base64:Xk9mQ1J6c1AwOUt6ZldtUW8xNThVUGVvV1ptRnhBOTA=}"
+      APP_DEBUG: "${APP_DEBUG:-false}"
+      APP_URL: "${APP_URL:-http://localhost:8080}"
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: "${DB_DATABASE:-sentinel}"
+      DB_USERNAME: "${DB_USERNAME:-sentinel}"
+      DB_PASSWORD: "${DB_PASSWORD:-SentinelSecurePass2026!}"
+      QUEUE_CONNECTION: "${QUEUE_CONNECTION:-database}"
+      SESSION_DRIVER: "${SESSION_DRIVER:-database}"
+      CACHE_STORE: "${CACHE_STORE:-database}"
+      AI_PROVIDER: "${AI_PROVIDER:-9router}"
+      AI_BASE_URL: "${AI_BASE_URL:-https://api.9router.com/v1}"
+      AI_API_KEY: "${AI_API_KEY:-}"
+      AI_MODEL: "${AI_MODEL:-deepseek-chat}"
+      N8N_WEBHOOK_URL: "${N8N_WEBHOOK_URL:-http://n8n:5678/webhook/sentinel-audit}"
+      SENTINEL_API_SECRET: "${SENTINEL_API_SECRET:-sentinel-secret-token-change-me}"
+    volumes:
+      - ./app:/var/www/html
+      - app_storage:/var/www/html/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sentinel_network
+    deploy:
+      resources:
+        limits:
+          cpus: "${APP_CPU_LIMIT:-1.50}"
+          memory: "${APP_MEM_LIMIT:-1024M}"
+    healthcheck:
+      test: ["CMD-SHELL", "php artisan --version || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # 3. SentinelAI Background Worker (Queue & Async AI Jobs)
+  # ---------------------------------------------------------------------------
+  worker:
+    image: sentinel-app:latest
+    container_name: sentinel-worker
+    restart: unless-stopped
+    command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--timeout=120"]
+    environment:
+      APP_NAME: "${APP_NAME:-SentinelAI}"
+      APP_ENV: "${APP_ENV:-production}"
+      APP_KEY: "${APP_KEY:-base64:Xk9mQ1J6c1AwOUt6ZldtUW8xNThVUGVvV1ptRnhBOTA=}"
+      APP_DEBUG: "${APP_DEBUG:-false}"
+      APP_URL: "${APP_URL:-http://localhost:8080}"
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: "${DB_DATABASE:-sentinel}"
+      DB_USERNAME: "${DB_USERNAME:-sentinel}"
+      DB_PASSWORD: "${DB_PASSWORD:-SentinelSecurePass2026!}"
+      QUEUE_CONNECTION: "${QUEUE_CONNECTION:-database}"
+      AI_PROVIDER: "${AI_PROVIDER:-9router}"
+      AI_BASE_URL: "${AI_BASE_URL:-https://api.9router.com/v1}"
+      AI_API_KEY: "${AI_API_KEY:-}"
+      AI_MODEL: "${AI_MODEL:-deepseek-chat}"
+      SENTINEL_API_SECRET: "${SENTINEL_API_SECRET:-sentinel-secret-token-change-me}"
+    volumes:
+      - ./app:/var/www/html
+      - app_storage:/var/www/html/storage
+    depends_on:
+      app:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - sentinel_network
+    deploy:
+      resources:
+        limits:
+          cpus: "${WORKER_CPU_LIMIT:-1.00}"
+          memory: "${WORKER_MEM_LIMIT:-512M}"
+
+  # ---------------------------------------------------------------------------
+  # 4. PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: sentinel-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${DB_DATABASE:-sentinel}"
+      POSTGRES_USER: "${DB_USERNAME:-sentinel}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-SentinelSecurePass2026!}"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - sentinel_network
+    deploy:
+      resources:
+        limits:
+          cpus: "${DB_CPU_LIMIT:-1.00}"
+          memory: "${DB_MEM_LIMIT:-1024M}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-sentinel} -d ${DB_DATABASE:-sentinel}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # 5. n8n Automation Engine
+  # ---------------------------------------------------------------------------
+  n8n:
+    image: n8nio/n8n:1.80.0
+    container_name: sentinel-n8n
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=${N8N_PUBLIC_URL:-http://localhost:5678/}
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      - GENERIC_TIMEZONE=${TIMEZONE:-Asia/Jakarta}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+    networks:
+      - sentinel_network
+    deploy:
+      resources:
+        limits:
+          cpus: "${N8N_CPU_LIMIT:-1.00}"
+          memory: "${N8N_MEM_LIMIT:-1024M}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+networks:
+  sentinel_network:
+    driver: bridge
+
+volumes:
+  db_data:
+    name: sentinel_db_data
+  n8n_data:
+    name: sentinel_n8n_data
+  app_storage:
+    name: sentinel_app_storage

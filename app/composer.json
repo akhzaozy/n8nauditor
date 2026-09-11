@@ -1,0 +1,53 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "sentinel/sentinel-ai",
+    "type": "project",
+    "description": "SentinelAI - AI-Powered Server Security & Risk Auditor",
+    "keywords": ["security", "audit", "laravel", "n8n", "ai", "risk-engine"],
+    "license": "MIT",
+    "require": {
+        "php": "^8.2 || ^8.3 || ^8.4 || ^8.5",
+        "guzzlehttp/guzzle": "^7.8",
+        "laravel/framework": "^11.0 || ^12.0",
+        "laravel/tinker": "^2.9"
+    },
+    "require-dev": {
+        "fakerphp/faker": "^1.23",
+        "mockery/mockery": "^1.6",
+        "nunomaduro/collision": "^8.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/",
+            "Database\\Factories\\": "database/factories/",
+            "Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": [
+            "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+            "@php artisan package:discover --ansi"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "dont-discover": []
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "php-http/discovery": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

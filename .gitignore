@@ -1,0 +1,30 @@
+# Environment & Secrets
+.env
+.env.backup
+.env.production
+
+# Dependencies
+/app/vendor/
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Laravel Storage & Cache
+/app/storage/framework/views/*
+!/app/storage/framework/views/.gitkeep
+/app/storage/framework/sessions/*
+!/app/storage/framework/sessions/.gitkeep
+/app/storage/framework/cache/*
+!/app/storage/framework/cache/.gitkeep
+/app/storage/logs/*
+!/app/storage/logs/.gitkeep
+/app/bootstrap/cache/*
+!/app/bootstrap/cache/.gitkeep
+
+# IDE & OS Files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

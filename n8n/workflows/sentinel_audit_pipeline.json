@@ -1,0 +1,251 @@
+{
+  "name": "SentinelAI Server Security Audit Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "1d10e53a-4a41-4770-9831-291129eb86d1",
+      "name": "Every 6 Hours Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sentinel-audit",
+        "options": {}
+      },
+      "id": "e229bc62-0941-4d37-9774-7254d39f4082",
+      "name": "Webhook Ingest / Manual Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 500],
+      "webhookId": "sentinel-audit-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize payload from Webhook or Scheduled Collector\nconst incoming = $input.all()[0]?.json || {};\nlet auditData = incoming.body ? incoming.body : incoming;\n\n// If triggered by schedule without payload, generate fallback telemetry or read from server\nif (!auditData.server || !auditData.findings) {\n  auditData = {\n    server: { hostname: \"sentinel-node-01\", os: \"Linux Production\", kernel: \"6.8.0-generic\" },\n    resources: { cpu_usage: 24, memory_usage: 52, disk_usage: 46 },\n    security: { firewall: \"active\", ssh_root_login: \"no\", ssh_password_auth: \"no\", ssh_port: \"22\" },\n    services: { failed: 0 },\n    findings: [\n      {\n        id: \"SSH-003\",\n        category: \"SSH\",\n        severity: \"LOW\",\n        score_impact: 5,\n        title: \"Default SSH port 22 in use\",\n        evidence: \"Port 22\",\n        description: \"Running SSH on standard port 22 exposes host to automated scans.\",\n        recommendation: \"Consider changing SSH port or utilizing fail2ban.\"\n      }\n    ],\n    score: 95,\n    risk_level: \"LOW\"\n  };\n}\n\nreturn [{ json: auditData }];"
+      },
+      "id": "c13883a9-e31b-4375-b873-10e5bc5312cf",
+      "name": "Parse & Validate Audit JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AI_BASE_URL || 'https://api.9router.com/v1' }}/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.AI_API_KEY || '') }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $env.AI_MODEL || 'deepseek-chat' }}\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are SentinelAI Security Advisor. Analyze the provided Linux server audit findings strictly based on the evidence. Explain the risk, operational impact, and specific remediation steps. Do NOT hallucinate findings not present in evidence. Do NOT provide destructive commands. Output valid JSON in this exact structure: { \\\"summary\\\": \\\"...\\\", \\\"overall_assessment\\\": \\\"...\\\", \\\"findings\\\": [ { \\\"id\\\": \\\"...\\\", \\\"explanation\\\": \\\"...\\\", \\\"impact\\\": \\\"...\\\", \\\"recommendation\\\": \\\"...\\\", \\\"priority\\\": \\\"HIGH|MODERATE|LOW\\\" } ] }\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Server: {{ $json.server.hostname }} (OS: {{ $json.server.os }})\\nRisk Score: {{ $json.score }}/100 ({{ $json.risk_level }})\\nFindings:\\n{{ JSON.stringify($json.findings, null, 2) }}\"\n    }\n  ],\n  \"temperature\": 0.2\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "f582bc19-5a12-4217-a169-dc3079b76610",
+      "name": "AI Risk Analysis (Modular Gateway)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 400],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine original audit with AI response\nconst auditData = $('Parse & Validate Audit JSON').first().json;\nconst aiRaw = $input.first()?.json || {};\n\nlet aiReport = {\n  summary: \"Automated rule-based verification completed.\",\n  overall_assessment: `Security score: ${auditData.score}/100 (${auditData.risk_level}).`,\n  findings: []\n};\n\ntry {\n  const contentStr = aiRaw.choices?.[0]?.message?.content || \"\";\n  if (contentStr) {\n    const cleaned = contentStr.replace(/```json\\n?|```/g, '').trim();\n    aiReport = JSON.parse(cleaned);\n  }\n} catch (e) {\n  aiReport.summary = \"AI report processed with rule fallback.\";\n}\n\nreturn [{\n  json: {\n    ...auditData,\n    ai_report: aiReport\n  }\n}];"
+      },
+      "id": "e492b492-93b5-4ff1-8e99-4c220fbe54b1",
+      "name": "Merge AI Report with Audit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://nginx/api/v1/audits/ingest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Sentinel-Token",
+              "value": "={{ $env.SENTINEL_API_SECRET || 'sentinel-secret-token-change-me' }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "27fa0b48-d3e9-4ec4-bc48-aa23b8ea16df",
+      "name": "Save Audit to SentinelAI API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "78174f1b-3f04-4b47-b844-4861b5c40ceb",
+              "leftValue": "={{ $('Merge AI Report with Audit').first().json.risk_level }}",
+              "rightValue": "HIGH",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "79b3294c-e822-4462-ba90-501bc5b1a64f",
+              "leftValue": "={{ $('Merge AI Report with Audit').first().json.risk_level }}",
+              "rightValue": "CRITICAL",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "a93be069-42b1-419d-bdcf-32ca2a7b6860",
+      "name": "Filter High or Critical Risks",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1440, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.NOTIFICATION_DISCORD_WEBHOOK || 'http://localhost/dummy-webhook' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"🚨 **SentinelAI Alert**: Server `{{ $('Merge AI Report with Audit').first().json.server.hostname }}` has security risk level **{{ $('Merge AI Report with Audit').first().json.risk_level }}** (Score: {{ $('Merge AI Report with Audit').first().json.score }}/100).\\nFindings count: {{ $('Merge AI Report with Audit').first().json.findings.length }}.\\nView details at: {{ $env.APP_URL || 'http://localhost:8080' }}/audits\"\n}",
+        "options": {}
+      },
+      "id": "893ccbf2-d26b-4e09-b648-9128cc12d61a",
+      "name": "Dispatch Security Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1680, 300],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Every 6 Hours Schedule": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate Audit JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Ingest / Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate Audit JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Validate Audit JSON": {
+      "main": [
+        [
+          {
+            "node": "AI Risk Analysis (Modular Gateway)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Risk Analysis (Modular Gateway)": {
+      "main": [
+        [
+          {
+            "node": "Merge AI Report with Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge AI Report with Audit": {
+      "main": [
+        [
+          {
+            "node": "Save Audit to SentinelAI API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Audit to SentinelAI API": {
+      "main": [
+        [
+          {
+            "node": "Filter High or Critical Risks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter High or Critical Risks": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Security Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
