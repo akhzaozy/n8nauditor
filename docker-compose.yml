@@ -83,6 +83,9 @@ services:
   # 3. SentinelAI Background Worker (Queue & Async AI Jobs)
   # ---------------------------------------------------------------------------
   worker:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
     image: sentinel-app:latest
     container_name: sentinel-worker
     restart: unless-stopped
